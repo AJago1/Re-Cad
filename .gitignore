@@ -1,0 +1,104 @@
+# Database files - contain sensitive pricing data
+*.db
+*.sqlite
+*.sqlite3
+
+# Large model files - too big for GitHub and may contain sensitive training data
+*.pkl
+*.model
+*.joblib
+
+# CSV files with pricing data - contain sensitive business information
+*.csv
+!requirements.txt  # Keep requirements.txt even though it ends with .txt
+
+# Large datasets and analysis results
+*.xlsx
+*.xls
+
+# Generated images and charts - contain business analysis
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+
+# PowerPoint presentations - contain business information  
+*.pptx
+*.ppt
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows shortcuts
+*.lnk
+
+# Large embedded python distribution
+python-portable/
+python-embed.zip
+
+# Personal configuration
+*.code-workspace
+
+# Large binary files
+*.exe
+*.dll
+*.pyd
+Release/
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Large text reports that might contain sensitive analysis
+*_report.txt
+*_analysis.txt
+*_summary.txt
+
+# Backup files
+*_backup.*
+*_bak.*
+
+# Large JSON model files (keep small config files)
+*_model.json
+high_performance_*.json
+improved_*.json
+xgboost_*.json
+random_forest_*.json
+
+# Batch files with personal paths
+*.bat
+*.ps1
+
+# Exception: Keep small essential config files
+!ai_pricing_metadata.json
+!pricing_presets.json
+!requirements.txt 

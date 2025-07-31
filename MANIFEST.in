@@ -1,0 +1,51 @@
+# Include essential documentation
+include README.md
+include LICENSE
+include requirements.txt
+include .gitignore
+
+# Include setup configuration
+include setup.py
+include MANIFEST.in
+
+# Include all Python source files
+recursive-include stl_analyzer *.py
+
+# Include essential configuration files
+recursive-include stl_analyzer/data *.json
+exclude stl_analyzer/data/*.pkl
+exclude stl_analyzer/data/*.db
+
+# Exclude sensitive and large files
+exclude *.db
+exclude *.pkl
+exclude *.csv
+exclude *.xlsx
+exclude *.png
+exclude *.jpg
+exclude *.pptx
+exclude *.ppt
+
+# Exclude cache and temporary files
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]
+recursive-exclude * *.so
+recursive-exclude * *.dll
+recursive-exclude * *.pyd
+
+# Exclude development and personal files
+exclude *.code-workspace
+exclude *.bat
+exclude *.ps1
+exclude *.lnk
+
+# Exclude large directories
+prune python-portable
+prune venv
+prune Release
+prune __pycache__
+
+# Exclude backup files
+exclude *_backup.*
+exclude *_bak.*
+exclude gui_*.py 

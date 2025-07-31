@@ -1,0 +1,51 @@
+{
+  "model_type": "Enhanced Lasso with Non-Linear Features",
+  "optimal_alpha": 0.47148663634573945,
+  "selected_features": [
+    "shrinkwrap_volume",
+    "geometric_mean_dims",
+    "convex_hull_volume",
+    "Volume",
+    "Max D",
+    "surface_area_sqrt",
+    "aspect_ratio_penalty",
+    "large_part_efficiency",
+    "quantity_efficiency",
+    "slenderness_ratio",
+    "size_category_large",
+    "complexity_volume_interaction",
+    "batch_efficiency",
+    "Min D",
+    "dimension_instability",
+    "handling_complexity",
+    "dimensional_balance"
+  ],
+  "feature_coefficients": {
+    "shrinkwrap_volume": 133.38942729034102,
+    "geometric_mean_dims": 70.53962147016342,
+    "convex_hull_volume": 61.01730822059133,
+    "Volume": -30.559281687892707,
+    "Max D": -23.64148906339437,
+    "surface_area_sqrt": 16.823016442437233,
+    "aspect_ratio_penalty": 12.18047399863764,
+    "large_part_efficiency": -11.426425539579519,
+    "quantity_efficiency": -8.425858593870103,
+    "slenderness_ratio": -7.72049671617293,
+    "size_category_large": -3.445337420893164,
+    "complexity_volume_interaction": -2.510541054983633,
+    "batch_efficiency": 1.3932253829171934,
+    "Min D": 1.011585600628166,
+    "dimension_instability": -0.9481044386568932,
+    "handling_complexity": 0.8603704558931325,
+    "dimensional_balance": -0.10502559387329509
+  },
+  "performance": {
+    "train_r2": 0.9618827790431175,
+    "test_r2": 0.8978194212809152,
+    "train_mae": 15.528539965348951,
+    "test_mae": 16.259911480434095
+  },
+  "feature_count": 17,
+  "total_features_tested": 52,
+  "training_samples": 1820
+}

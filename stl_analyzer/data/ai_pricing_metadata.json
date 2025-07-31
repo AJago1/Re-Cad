@@ -1,0 +1,21 @@
+{
+  "feature_names": [
+    "convex_hull_volume",
+    "bb_volume",
+    "surface_area",
+    "Volume",
+    "shrinkwrap_volume",
+    "shrinkwrap_ratio",
+    "Max D",
+    "Min D",
+    "D Ratio",
+    "waste",
+    "waste_ratio",
+    "Quantity"
+  ],
+  "accuracy": 0.8647486971548112,
+  "mae": 16.441017411559855,
+  "training_samples": 2251,
+  "feature_count": 12,
+  "trained_date": "2025-06-09T23:15:24.176447"
+}

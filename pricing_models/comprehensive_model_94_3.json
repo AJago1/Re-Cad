@@ -1,0 +1,34 @@
+{
+  "features": [
+    "Size_Factor",
+    "shrinkwrap_volume",
+    "convex_hull_volume",
+    "bb_volume",
+    "surface_area"
+  ],
+  "coefficients": [
+    137.273097,
+    8.679136,
+    27.367166,
+    43.446650,
+    -23.383602
+  ],
+  "intercept": 64.948784,
+  "feature_means": [
+    12518.206330,
+    287293.901400,
+    1243161.945407,
+    2080028.729143,
+    51632.368134
+  ],
+  "feature_scales": [
+    25032.783691,
+    776109.360299,
+    9999710.459629,
+    15641128.935934,
+    146231.991264
+  ],
+  "r2_score": 0.9432,
+  "mae": 19.45,
+  "model_name": "Comprehensive 5-Feature Model (94.3% Accuracy)"
+} 

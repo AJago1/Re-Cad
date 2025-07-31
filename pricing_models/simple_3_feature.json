@@ -1,0 +1,26 @@
+{
+  "features": [
+    "shrinkwrap_volume",
+    "surface_area",
+    "bb_volume"
+  ],
+  "coefficients": [
+    0.0001,
+    0.002,
+    5e-05
+  ],
+  "intercept": 15.0,
+  "feature_means": [
+    287293.9,
+    51632.4,
+    2080028.7
+  ],
+  "feature_scales": [
+    776109.4,
+    146232.0,
+    15641128.9
+  ],
+  "r2_score": 0.85,
+  "mae": 28.5,
+  "model_name": "Simple 3-Feature Model (85% Accuracy)"
+}

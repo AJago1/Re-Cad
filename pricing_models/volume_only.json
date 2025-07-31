@@ -1,0 +1,22 @@
+{
+  "features": [
+    "shrinkwrap_volume",
+    "convex_hull_volume"
+  ],
+  "coefficients": [
+    0.0002,
+    0.0001
+  ],
+  "intercept": 25.0,
+  "feature_means": [
+    287293.9,
+    1243161.9
+  ],
+  "feature_scales": [
+    776109.4,
+    9999710.5
+  ],
+  "r2_score": 0.78,
+  "mae": 35.2,
+  "model_name": "Volume-Only Model (78% Accuracy)"
+}
