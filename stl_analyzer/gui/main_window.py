@@ -621,7 +621,7 @@ class MainWindow(QtWidgets.QMainWindow):
                             # Already a list, convert to numpy array
                             optimal_transform = np.array(file_data['optimal_transform'])
                             print(f"✅ Using stored optimal transform")
-                    except Exception as e:
+            except Exception as e:
                         print(f"⚠️ Error loading optimal transform: {e}")
                         optimal_transform = None
                 
@@ -869,7 +869,7 @@ class MainWindow(QtWidgets.QMainWindow):
             print(f"❌ Error in find_similar_to_loaded_part: {e}")
             import traceback
             traceback.print_exc()
-    
+        
     def refresh_pricing_models(self):
         """Refresh pricing models - placeholder for now"""
         # This will be implemented by the PriceCalculatorTab
