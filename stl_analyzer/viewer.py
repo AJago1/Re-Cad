@@ -98,7 +98,13 @@ class STLViewer(QtWidgets.QFrame):
         self.convex_hull_actor = None
         self.shrinkwrap = None
         self.shrinkwrap_actor = None
+        self.bvh_8leaf = None
+        self.bvh_8leaf_actor = None
         self.shrinkwrap_resolution = 64  # Default voxel resolution
+        
+        # Pack3D visualization
+        self.pack3d_actors = []  # List of actors for Pack3D results
+        self.pack3d_visible = False
         self.shrinkwrap_closing_size = 1  # Default morphological closing size
         self.shrinkwrap_inflation = 0.02  # Default inflation factor (2% of mesh scale)
         self.preserve_holes = True  # Default to try preserving holes
@@ -110,6 +116,7 @@ class STLViewer(QtWidgets.QFrame):
         self.show_bounding_box = True
         self.show_convex_hull = False
         self.show_shrinkwrap = False
+        self.show_bvh_8leaf = False
         self.color = [0.2, 0.6, 0.9]  # Bright blue color for the model
         
         # Orientation correction angle (clockwise rotation around X-axis in degrees)
@@ -432,6 +439,169 @@ class STLViewer(QtWidgets.QFrame):
             self.display_message("Failed to create convex hull visualization", 3000)
             return False
     
+    def create_bvh_8leaf_visualization(self):
+        """Create a visualization of the 8-leaf BVH structure."""
+        if not self.mesh:
+            return
+        
+        try:
+            # Remove old BVH actor if exists
+            if hasattr(self, 'bvh_8leaf_actor') and self.bvh_8leaf_actor and self.bvh_8leaf_actor in self.renderer.GetActors():
+                self.renderer.RemoveActor(self.bvh_8leaf_actor)
+            
+            # Create 8-leaf BVH if needed
+            if not hasattr(self, 'bvh_8leaf') or self.bvh_8leaf is None:
+                self.display_message("Creating 8-leaf BVH, please wait...", 2000)
+                self.vtk_widget.GetRenderWindow().Render()  # Update display
+                
+                try:
+                    # Import the BVH module
+                    try:
+                        from .bvh_8leaf import EightLeafBVH
+                    except ImportError:
+                        from bvh_8leaf import EightLeafBVH
+                    
+                    # Create 8-leaf BVH
+                    print("🔧 Creating 8-leaf BVH for visualization...")
+                    print(f"   Mesh bounds: {self.mesh.bounds}")
+                    print(f"   Mesh center: {self.mesh.centroid}")
+                    
+                    # Use the same mesh that's being rendered (already transformed)
+                    print("   Using transformed mesh for BVH (matches rendered model)")
+                    
+                    # Try Fogleman's Pack3D BVH first (triangle-centroid approach)
+                    try:
+                        from .cpp_bvh_fogleman_wrapper import FoglemanBVH
+                        self.bvh_8leaf = FoglemanBVH(self.mesh, leaf_count=8)
+                        print("🎯 Using Fogleman's Pack3D BVH (triangle-centroid, no empty regions)")
+                    except ImportError:
+                        try:
+                            from cpp_bvh_fogleman_wrapper import FoglemanBVH
+                            self.bvh_8leaf = FoglemanBVH(self.mesh, leaf_count=8)
+                            print("🎯 Using Fogleman's Pack3D BVH (triangle-centroid, no empty regions)")
+                        except ImportError:
+                            try:
+                                from .cpp_bvh_fast_wrapper import FastCppBVH
+                                self.bvh_8leaf = FastCppBVH(self.mesh, leaf_count=8)
+                                print("🚀 Using previous C++ BVH implementation (fallback)")
+                            except ImportError:
+                                # Final fallback to Python implementation
+                                self.bvh_8leaf = EightLeafBVH(self.mesh, leaf_count=8)
+                                print("🐍 Using Python BVH implementation (fallback)")
+                    
+                    # Check BVH creation success (compatible with both C++ and Python)
+                    if self.bvh_8leaf:
+                        leaf_count = getattr(self.bvh_8leaf, 'leaf_count', 8)
+                        active_leaves = getattr(self.bvh_8leaf, 'active_leaves', leaf_count)
+                        
+                        print(f"✅ Created {leaf_count}-leaf BVH with {active_leaves}/{leaf_count} active leaves")
+                        
+                        # Debug: Print first few BVH box coordinates (works for both implementations)
+                        try:
+                            for i in range(min(3, leaf_count)):
+                                if hasattr(self.bvh_8leaf, 'get_leaf_bounds'):
+                                    # C++ implementation
+                                    min_coords, max_coords = self.bvh_8leaf.get_leaf_bounds(i)
+                                    print(f"   BVH Box {i}: min={min_coords}, max={max_coords}")
+                                elif hasattr(self.bvh_8leaf, 'leaves') and i < len(self.bvh_8leaf.leaves):
+                                    # Python implementation
+                                    leaf = self.bvh_8leaf.leaves[i]
+                                    print(f"   BVH Box {i}: min={leaf.min}, max={leaf.max}, center={leaf.center()}")
+                        except Exception as e:
+                            print(f"   Debug info failed: {e}")
+                    else:
+                        print(f"❌ Failed to create BVH")
+                        self.display_message("Failed to create BVH", 3000)
+                        return False
+                except Exception as e:
+                    print(f"❌ Error creating BVH: {e}")
+                    self.display_message(f"BVH creation failed: {str(e)}", 3000)
+                    return False
+            
+            # Create VTK visualization of BVH boxes
+            import vtk
+            
+            # Create appendFilter to combine all boxes into single polydata
+            appendFilter = vtk.vtkAppendPolyData()
+            
+            # Create each bounding box as a wireframe cube (compatible with both implementations)
+            leaf_count = getattr(self.bvh_8leaf, 'leaf_count', 8)
+            print(f"📦 Creating VTK visualization for {leaf_count} BVH boxes")
+            
+            for i in range(leaf_count):
+                # Get bounds in a way that works for both C++ and Python implementations
+                try:
+                    if hasattr(self.bvh_8leaf, 'get_leaf_bounds'):
+                        # C++ implementation
+                        min_coords, max_coords = self.bvh_8leaf.get_leaf_bounds(i)
+                    elif hasattr(self.bvh_8leaf, 'leaves') and i < len(self.bvh_8leaf.leaves):
+                        # Python implementation
+                        bbox = self.bvh_8leaf.leaves[i]
+                        min_coords, max_coords = bbox.min, bbox.max
+                    else:
+                        continue  # Skip if can't get bounds
+                    
+                    # Create cube source using bounds
+                    cube = vtk.vtkCubeSource()
+                    
+                    # Use SetBounds - SetBounds(xmin, xmax, ymin, ymax, zmin, zmax)
+                    cube.SetBounds(min_coords[0], max_coords[0], 
+                                  min_coords[1], max_coords[1], 
+                                  min_coords[2], max_coords[2])
+                    
+                    # Debug: Print cube info for first few boxes
+                    if i < 3:
+                        print(f"   VTK Box {i}: bounds=({min_coords} to {max_coords})")
+                    
+                    cube.Update()
+                    
+                    # Add to append filter
+                    appendFilter.AddInputData(cube.GetOutput())
+                    
+                except Exception as e:
+                    print(f"   ⚠️ Skipped Box {i}: {e}")
+                    continue
+            
+            # Update the append filter
+            appendFilter.Update()
+            
+            # Create mapper for the combined geometry
+            mapper = vtk.vtkPolyDataMapper()
+            mapper.SetInputData(appendFilter.GetOutput())
+            
+            # Create actor
+            self.bvh_8leaf_actor = vtk.vtkActor()
+            self.bvh_8leaf_actor.SetMapper(mapper)
+            
+            # Set visual properties (wireframe boxes in bright green)
+            prop = self.bvh_8leaf_actor.GetProperty()
+            prop.SetRepresentationToWireframe()
+            prop.SetColor(0.0, 1.0, 0.0)  # Bright green
+            prop.SetLineWidth(2)
+            prop.SetOpacity(0.8)
+            
+            # Apply the same corner transform that's used for the main model and bounding box
+            # This ensures the BVH boxes are positioned correctly relative to the model
+            if hasattr(self, 'actor') and self.actor:
+                transform = self.actor.GetUserTransform()
+                if transform:
+                    self.bvh_8leaf_actor.SetUserTransform(transform)
+                    print("✅ Applied corner transform to BVH visualization")
+            
+            # Add to renderer
+            self.renderer.AddActor(self.bvh_8leaf_actor)
+            self.vtk_widget.GetRenderWindow().Render()
+            
+            print("✅ 8-leaf BVH visualization created successfully")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error in create_bvh_8leaf_visualization: {e}")
+            import traceback
+            print(traceback.format_exc())
+            self.display_message(f"BVH visualization failed: {str(e)}", 3000)
+            return False
+    
     def create_shrinkwrap_visualization(self):
         """Create a visualization of the shrinkwrap mesh that fills small holes."""
         if not self.mesh:
@@ -612,6 +782,164 @@ class STLViewer(QtWidgets.QFrame):
         elif visible:
             # If we tried to show the shrinkwrap but couldn't, display a message
             self.display_message("Shrinkwrap not available for this model", 3000)
+    
+    def set_bvh_8leaf_visible(self, visible):
+        """Set 8-leaf BVH visibility"""
+        self.show_bvh_8leaf = visible
+        
+        # If enabling BVH and we don't have one yet, create it
+        if visible and (not hasattr(self, 'bvh_8leaf_actor') or self.bvh_8leaf_actor is None):
+            if self.mesh:  # Only create if we have a mesh loaded
+                self.create_bvh_8leaf_visualization()
+        
+        # Show/hide the actor if it exists
+        if hasattr(self, 'bvh_8leaf_actor') and self.bvh_8leaf_actor:
+            if visible:
+                self.renderer.AddActor(self.bvh_8leaf_actor)
+            else:
+                self.renderer.RemoveActor(self.bvh_8leaf_actor)
+            self.vtk_widget.GetRenderWindow().Render()
+        elif visible:
+            # If we tried to show the BVH but couldn't, display a message
+            self.display_message("8-leaf BVH not available for this model", 3000)
+    
+    def set_bvh_8leaf_solid(self, solid):
+        """Toggle BVH visualization between solid and wireframe"""
+        if hasattr(self, 'bvh_8leaf_actor') and self.bvh_8leaf_actor:
+            prop = self.bvh_8leaf_actor.GetProperty()
+            if solid:
+                # Solid rendering with transparency
+                prop.SetRepresentationToSurface()
+                prop.SetOpacity(0.3)  # Semi-transparent green
+                prop.SetColor(0.0, 0.8, 0.0)  # Green color
+                print("🔲 BVH visualization: SOLID mode (semi-transparent)")
+            else:
+                # Wireframe rendering (original style)
+                prop.SetRepresentationToWireframe()
+                prop.SetOpacity(0.8)  # More opaque for wireframe
+                prop.SetColor(0.0, 1.0, 0.0)  # Bright green
+                prop.SetLineWidth(2)
+                print("📦 BVH visualization: WIREFRAME mode")
+            
+            self.vtk_widget.GetRenderWindow().Render()
+        else:
+            print("⚠️ No BVH actor available for solid/wireframe toggle")
+    
+    def set_pack3d_results(self, pack3d_manager):
+        """Display Pack3D optimization results"""
+        try:
+            # Clear previous Pack3D actors
+            self.clear_pack3d_visualization()
+            
+            if not pack3d_manager or not hasattr(pack3d_manager, 'get_part_transforms'):
+                print("⚠️ No Pack3D results to display")
+                return
+            
+            # Get part transforms from Pack3D
+            transforms = pack3d_manager.get_part_transforms()
+            
+            if not transforms:
+                print("⚠️ No part transforms available")
+                return
+            
+            print(f"🎯 Displaying {len(transforms)} Pack3D optimized parts")
+            
+            # Create a colored visualization for each part
+            colors = [
+                (1.0, 0.2, 0.2),  # Red
+                (0.2, 1.0, 0.2),  # Green  
+                (0.2, 0.2, 1.0),  # Blue
+                (1.0, 1.0, 0.2),  # Yellow
+                (1.0, 0.2, 1.0),  # Magenta
+                (0.2, 1.0, 1.0),  # Cyan
+                (1.0, 0.6, 0.2),  # Orange
+                (0.6, 0.2, 1.0),  # Purple
+            ]
+            
+            for i, transform in enumerate(transforms):
+                # Get mesh from transform data (it should be available there)
+                mesh = None
+                if 'mesh' in transform:
+                    mesh = transform['mesh']
+                elif hasattr(pack3d_manager, 'parts'):
+                    # Fallback: search in parts list
+                    for part in pack3d_manager.parts:
+                        if part['name'] == transform['part_name']:
+                            mesh = part['mesh']
+                            break
+                
+                if mesh is not None:
+                    # Create a copy of the mesh for transformation
+                    transformed_mesh = mesh.copy()
+                    
+                    # Apply Pack3D transform
+                    position = transform['position']
+                    rotation = transform['rotation']  # [roll, pitch, yaw]
+                    
+                    # Create transformation matrix
+                    import trimesh.transformations as transformations
+                    
+                    # Translation
+                    translation_matrix = transformations.translation_matrix(position)
+                    
+                    # Rotation (roll, pitch, yaw)
+                    rotation_matrix = transformations.euler_matrix(
+                        rotation[0], rotation[1], rotation[2], 'rxyz'
+                    )
+                    
+                    # Combined transformation
+                    transform_matrix = np.dot(translation_matrix, rotation_matrix)
+                    
+                    # Apply transformation
+                    transformed_mesh.apply_transform(transform_matrix)
+                    
+                    # Create VTK actor with high transparency for better visibility
+                    color = colors[i % len(colors)]
+                    actor = self.mesh_to_actor(
+                        transformed_mesh, 
+                        color=color, 
+                        opacity=0.8,  # Much more solid for better visibility while keeping overlap detection
+                        lighting=True
+                    )
+                    
+                    if actor:
+                        self.pack3d_actors.append(actor)
+                        if self.pack3d_visible:
+                            self.renderer.AddActor(actor)
+                        
+                        print(f"   Part {i+1} ({transform['part_name']}): {color} at [{position[0]:.1f}, {position[1]:.1f}, {position[2]:.1f}]")
+            
+            print(f"✅ Pack3D visualization created with {len(self.pack3d_actors)} parts")
+            
+            if self.pack3d_visible:
+                self.vtk_widget.GetRenderWindow().Render()
+                
+        except Exception as e:
+            print(f"❌ Error creating Pack3D visualization: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def set_pack3d_visible(self, visible):
+        """Toggle Pack3D results visibility"""
+        self.pack3d_visible = visible
+        
+        for actor in self.pack3d_actors:
+            if visible:
+                self.renderer.AddActor(actor)
+            else:
+                self.renderer.RemoveActor(actor)
+        
+        self.vtk_widget.GetRenderWindow().Render()
+        print(f"📦 Pack3D visualization: {'VISIBLE' if visible else 'HIDDEN'}")
+    
+    def clear_pack3d_visualization(self):
+        """Clear Pack3D visualization actors"""
+        for actor in self.pack3d_actors:
+            if actor:
+                self.renderer.RemoveActor(actor)
+        
+        self.pack3d_actors.clear()
+        self.vtk_widget.GetRenderWindow().Render()
     
     def toggle_wireframe(self):
         """Toggle wireframe mode."""
@@ -1184,11 +1512,15 @@ class STLViewer(QtWidgets.QFrame):
                     
                 if hasattr(self, 'bbox_actor') and self.bbox_actor and self.bbox_actor in self.renderer.GetActors():
                     self.renderer.RemoveActor(self.bbox_actor)
+                    
+                if hasattr(self, 'bvh_8leaf_actor') and self.bvh_8leaf_actor and self.bvh_8leaf_actor in self.renderer.GetActors():
+                    self.renderer.RemoveActor(self.bvh_8leaf_actor)
             
             # Clear model-specific data
             self.mesh = None
             self.convex_hull = None
             self.shrinkwrap = None
+            self.bvh_8leaf = None
             self.optimal_transform = None
             if hasattr(self, 'original_mesh'):
                 self.original_mesh = None
@@ -1201,8 +1533,16 @@ class STLViewer(QtWidgets.QFrame):
             self.actor = None
             self.convex_hull_actor = None
             self.shrinkwrap_actor = None
+            self.bvh_8leaf_actor = None
             if hasattr(self, 'bbox_actor'):
                 self.bbox_actor = None
+            
+            # Clear Pack3D actors (but don't reset the visualization flag)
+            if hasattr(self, 'pack3d_actors'):
+                for actor in self.pack3d_actors:
+                    if actor and self.renderer:
+                        self.renderer.RemoveActor(actor)
+                self.pack3d_actors.clear()
             
             print("Cleared previous model data")
             
@@ -1320,7 +1660,7 @@ class STLViewer(QtWidgets.QFrame):
             self.shrinkwrap_actor = self.mesh_to_actor(
                 shrinkwrap_mesh, 
                 color=(0.2, 0.6, 0.9),  # Blue color
-                opacity=0.5,
+                opacity=0.8,  # Much more solid for better visibility while keeping overlap detection
                 wireframe=True
             )
             

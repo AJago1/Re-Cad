@@ -2207,20 +2207,15 @@ def extract_features_with_shrinkwrap(file_path, offset_mm=4.0, offset_percent=No
                 if shrinkwrap_mesh is not None and shrinkwrap_mesh.volume > 0:
                     shrinkwrap_volume = shrinkwrap_mesh.volume
                     shrinkwrap_ratio = volume / shrinkwrap_volume if shrinkwrap_volume > 0 else 0.0
-                    base_dir = os.path.dirname(file_path)
-                    base_name = os.path.splitext(os.path.basename(file_path))[0]
-                    shrinkwrap_filename = f"{base_name}_shrinkwrap_{offset_mm:.1f}mm.stl"
-                    shrinkwrap_stl_path = os.path.join(base_dir, shrinkwrap_filename)
-                    try:
-                        shrinkwrap_mesh.export(shrinkwrap_stl_path)
-                        shrinkwrap_export_date = datetime.datetime.now().isoformat()
-                        shrinkwrap_time = time.time() - shrinkwrap_start
-                        print(f"✅ Proper shrinkwrap exported: {shrinkwrap_filename} in {shrinkwrap_time:.2f}s")
-                        print(f"   Original volume: {volume:.2f}mm³, Shrinkwrap volume: {shrinkwrap_volume:.2f}mm³")
-                    except Exception as export_error:
-                        print(f"Failed to export shrinkwrap STL: {export_error}")
-                        shrinkwrap_stl_path = None
-                        shrinkwrap_export_date = None
+                    
+                    # Don't save shrinkwrap files anymore - just calculate volume
+                    shrinkwrap_time = time.time() - shrinkwrap_start
+                    print(f"✅ Shrinkwrap volume calculated in {shrinkwrap_time:.2f}s (no file saved)")
+                    print(f"   Original volume: {volume:.2f}mm³, Shrinkwrap volume: {shrinkwrap_volume:.2f}mm³")
+                    
+                    # Set to None since we're not saving files
+                    shrinkwrap_stl_path = None
+                    shrinkwrap_export_date = None
                 else:
                     print(f"Failed to create valid shrinkwrap for {model_name}")
             except Exception as e:

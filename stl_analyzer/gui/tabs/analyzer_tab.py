@@ -329,20 +329,20 @@ class AnalyzerTab(QtWidgets.QWidget):
             from viewer import STLViewer
             self.stl_viewer = STLViewer(self)
             viewer_layout.addWidget(self.stl_viewer)
-            print("✅ STL Viewer created successfully in analyzer tab")
+            print("[OK] STL Viewer created successfully in analyzer tab")
         except ImportError:
             try:
                 from stl_analyzer.viewer import STLViewer
                 self.stl_viewer = STLViewer(self)
                 viewer_layout.addWidget(self.stl_viewer)
-                print("✅ STL Viewer created successfully (fallback import)")
+                print("[OK] STL Viewer created successfully (fallback import)")
             except ImportError:
                 try:
                     # Try relative import
                     from ...viewer import STLViewer
                     self.stl_viewer = STLViewer(self)
                     viewer_layout.addWidget(self.stl_viewer)
-                    print("✅ STL Viewer created successfully (relative import)")
+                    print("[OK] STL Viewer created successfully (relative import)")
                 except ImportError:
                     # Ultimate fallback
                     self.stl_viewer = QtWidgets.QLabel("3D Viewer not available")

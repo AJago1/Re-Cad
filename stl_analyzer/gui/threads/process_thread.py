@@ -65,41 +65,9 @@ class ProcessThread(QThread):
                 if shrinkwrap_vol > 0:
                     print(f"✅ Shrinkwrap data found: {shrinkwrap_vol:.2f}mm³ (ratio: {shrinkwrap_ratio:.4f})")
                     
-                    # Generate shrinkwrap STL file if requested
+                    # Skip generating shrinkwrap STL files - volume calculation is sufficient
                     if self.generate_files:
-                        print(f"🔄 Generating shrinkwrap STL file...")
-                        output_path = self._get_shrinkwrap_output_path(file_path)
-                        if output_path:
-                            print(f"📁 Output path: {output_path}")
-                            
-                            try:
-                                # Import shrinkwrap_manager for file generation only
-                                try:
-                                    from ...shrinkwrap_manager import generate_shrinkwrap_file_at_path
-                                except ImportError:
-                                    try:
-                                        from shrinkwrap_manager import generate_shrinkwrap_file_at_path
-                                    except ImportError:
-                                        print(f"❌ Could not import shrinkwrap_manager")
-                                        continue
-                                
-                                success = generate_shrinkwrap_file_at_path(
-                                    file_path,
-                                    output_path,
-                                    self.shrinkwrap_offset
-                                )
-                                
-                                if success:
-                                    features['shrinkwrap_stl_path'] = output_path
-                                    features['shrinkwrap_file_exists'] = True
-                                    features['shrinkwrap_export_date'] = datetime.datetime.now().isoformat()
-                                    print(f"✅ Shrinkwrap STL file created: {os.path.basename(output_path)}")
-                                else:
-                                    print(f"❌ Failed to create shrinkwrap STL file")
-                            except Exception as e:
-                                print(f"❌ Error creating STL file: {e}")
-                        else:
-                            print(f"❌ Could not determine output path for shrinkwrap file")
+                        print(f"📊 Shrinkwrap volume already calculated: {shrinkwrap_vol:.2f}mm³ (no file generation needed)")
                     else:
                         print(f"ℹ️  STL file generation disabled")
                 else:

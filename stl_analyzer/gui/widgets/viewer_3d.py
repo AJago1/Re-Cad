@@ -98,6 +98,12 @@ class STLViewerWidget(QtWidgets.QGroupBox):
         self.toggle_sw_btn.clicked.connect(lambda checked: self.stl_viewer.set_shrinkwrap_visible(checked))
         controls_layout.addWidget(self.toggle_sw_btn)
         
+        self.toggle_bvh_btn = QtWidgets.QPushButton("8-Leaf BVH")
+        self.toggle_bvh_btn.setCheckable(True)
+        self.toggle_bvh_btn.clicked.connect(lambda checked: self.stl_viewer.set_bvh_8leaf_visible(checked))
+        self.toggle_bvh_btn.setToolTip("Show 8-leaf Bounding Volume Hierarchy for collision detection")
+        controls_layout.addWidget(self.toggle_bvh_btn)
+        
         # Optimize orientation button
         optimize_btn = QtWidgets.QPushButton("Optimize")
         optimize_btn.clicked.connect(lambda: self.stl_viewer.optimize_orientation())

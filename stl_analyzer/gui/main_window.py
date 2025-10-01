@@ -191,6 +191,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.current_pricing_config = {}  # Current pricing configuration
         self.pricing_presets = {}  # Pricing presets storage
         
+        # Load pricing presets from file
+        self.load_pricing_presets()
+        
         # Load existing database and update view
         self.update_database_view()
         
@@ -621,7 +624,7 @@ class MainWindow(QtWidgets.QMainWindow):
                             # Already a list, convert to numpy array
                             optimal_transform = np.array(file_data['optimal_transform'])
                             print(f"✅ Using stored optimal transform")
-            except Exception as e:
+                    except Exception as e:
                         print(f"⚠️ Error loading optimal transform: {e}")
                         optimal_transform = None
                 
@@ -1125,36 +1128,246 @@ class MainWindow(QtWidgets.QMainWindow):
         features = part_data.get('features', {})
         quantity = part_data.get('quantity', 1)
         
-        # Basic price calculation - placeholder
-        volume = features.get('volume', 0)
-        surface_area = features.get('surface_area', 0)
+        # Get current printer type and preset
+        printer_type = self.get_current_printer_type()
+        preset_name = self.get_current_preset()
         
-        # Simple material-based pricing
-        material_cost = volume * 0.001  # 0.001 EUR per mm³
-        machine_cost = surface_area * 0.0001  # 0.0001 EUR per mm²
-        labor_cost = 5.0  # Fixed labor cost
+        # Calculate price based on printer type
+        if printer_type == "SLS" and preset_name in self.pricing_presets:
+            # Use SLS pricing
+            preset = self.pricing_presets[preset_name]
+            pricing_result = self.calculate_sls_price_basic(features, quantity, preset)
+            
+            material_cost = pricing_result.get('material_cost', 0)
+            machine_cost = pricing_result.get('machine_cost', 0)
+            labor_cost = pricing_result.get('labor_cost', 0)
+            base_price = pricing_result.get('base_cost', 0)
+            final_price = pricing_result.get('final_price', 0)
+            
+            print(f"💰 SLS Pricing: €{final_price:.2f} ({pricing_result.get('pricing_method', 'SLS')})")
+            
+        else:
+            # Fallback to basic pricing calculation
+            volume = features.get('volume', 0)
+            surface_area = features.get('surface_area', 0)
+            
+            # Simple material-based pricing
+            material_cost = volume * 0.001  # 0.001 EUR per mm³
+            machine_cost = surface_area * 0.0001  # 0.0001 EUR per mm²
+            labor_cost = 5.0  # Fixed labor cost
+            
+            base_price = (material_cost + machine_cost + labor_cost) * quantity
+            final_price = base_price * 1.2  # 20% markup
+            
+            print(f"💰 Basic Pricing: €{final_price:.2f} (General)")
         
-        base_price = (material_cost + machine_cost + labor_cost) * quantity
-        final_price = base_price * 1.2  # 20% markup
-        
-        # Update display (with safe handling of missing UI elements)
-        if hasattr(self, 'material_cost_label') and self.material_cost_label:
-            self.material_cost_label.setText(f"€{material_cost:.2f}")
-        if hasattr(self, 'machine_cost_label') and self.machine_cost_label:
-            self.machine_cost_label.setText(f"€{machine_cost:.2f}")
-        if hasattr(self, 'labor_cost_label') and self.labor_cost_label:
-            self.labor_cost_label.setText(f"€{labor_cost:.2f}")
-        if hasattr(self, 'base_total_label') and self.base_total_label:
-            self.base_total_label.setText(f"€{base_price:.2f}")
-        if hasattr(self, 'final_price_label') and self.final_price_label:
-            self.final_price_label.setText(f"€{final_price:.2f}")
+        # Update display in price calculator tab (with safe handling)
+        if hasattr(self, 'price_calculator_tab'):
+            self.price_calculator_tab.material_cost_label.setText(f"€{material_cost:.2f}")
+            self.price_calculator_tab.machine_cost_label.setText(f"€{machine_cost:.2f}")
+            self.price_calculator_tab.labor_cost_label.setText(f"€{labor_cost:.2f}")
+            self.price_calculator_tab.estimated_time_label.setText("0.0 h")  # TODO: Calculate actual time
+            self.price_calculator_tab.base_total_label.setText(f"€{base_price:.2f}")
+            self.price_calculator_tab.final_price_label.setText(f"€{final_price:.2f}")
         
         # Store calculated price
         part_data['calculated_price'] = final_price
+        part_data['pricing_method'] = printer_type
         
         # Enable save button (with safe handling)
-        if hasattr(self, 'save_to_project_button') and self.save_to_project_button:
-            self.save_to_project_button.setEnabled(True)
+        if hasattr(self, 'price_calculator_tab'):
+            self.price_calculator_tab.save_to_project_button.setEnabled(True)
+            self.price_calculator_tab.add_to_project_button.setEnabled(True)
+    
+    def load_pricing_presets(self):
+        """Load pricing presets from JSON file"""
+        import json
+        try:
+            presets_file = os.path.join(os.path.dirname(__file__), '..', 'data', 'pricing_presets.json')
+            if os.path.exists(presets_file):
+                with open(presets_file, 'r') as f:
+                    self.pricing_presets = json.load(f)
+                print(f"✅ Loaded {len(self.pricing_presets)} pricing presets")
+            else:
+                print(f"⚠️ Pricing presets file not found: {presets_file}")
+                # Initialize with default presets
+                self.pricing_presets = {
+                    "Default": {"name": "Default", "printer_type": "General"},
+                    "Premium": {"name": "Premium", "printer_type": "General"}, 
+                    "Economy": {"name": "Economy", "printer_type": "General"}
+                }
+        except Exception as e:
+            print(f"❌ Error loading pricing presets: {e}")
+            self.pricing_presets = {}
+    
+    def save_pricing_presets(self):
+        """Save pricing presets to JSON file"""
+        import json
+        try:
+            presets_file = os.path.join(os.path.dirname(__file__), '..', 'data', 'pricing_presets.json')
+            with open(presets_file, 'w') as f:
+                json.dump(self.pricing_presets, f, indent=2)
+            print(f"✅ Saved {len(self.pricing_presets)} pricing presets to {presets_file}")
+            return True
+        except Exception as e:
+            print(f"❌ Error saving pricing presets: {e}")
+            return False
+    
+    def calculate_sls_price_basic(self, features, quantity, preset):
+        """
+        Calculate basic SLS pricing without packing optimization
+        Part of Phase 1: SLS Foundation
+        """
+        try:
+            # Extract part features
+            volume = features.get('volume', 0)  # mm³
+            surface_area = features.get('surface_area', 0)  # mm²
+            bb_volume = features.get('bb_volume', 0)  # mm³
+            
+            # SLS-specific parameters from preset
+            powder_cost_per_gram = preset.get('powder_cost_per_gram', 0.06)
+            material_density = preset.get('material_density', 0.93)  # g/cm³
+            powder_reuse_ratio = preset.get('powder_reuse_ratio', 0.95)
+            build_speed = preset.get('build_speed_mm_per_hour', 15.0)
+            machine_cost_per_hour = preset.get('machine_cost_per_hour', 25.0)
+            labor_cost_per_hour = preset.get('labor_cost_per_hour', 30.0)
+            setup_time = preset.get('setup_time_hours', 0.5)
+            post_processing_time = preset.get('post_processing_time_per_part', 0.1)
+            margin_percent = preset.get('margin_percent', 20.0)
+            minimum_price = preset.get('minimum_price', 10.0)
+            
+            # Material cost calculation (SLS powder usage)
+            volume_cm3 = volume / 1000.0  # Convert mm³ to cm³
+            material_weight = volume_cm3 * material_density  # grams
+            # Account for powder reuse - only new powder cost
+            material_cost = material_weight * powder_cost_per_gram * (1 - powder_reuse_ratio)
+            
+            # Build time estimation (simplified)
+            build_volume = preset.get('build_volume', [200, 250, 330])
+            layer_thickness = preset.get('layer_thickness', 0.1)
+            part_height = max(20.0, (bb_volume / (surface_area + 1)) ** (1/3))  # Rough height estimate
+            layers_needed = part_height / layer_thickness
+            build_time_hours = layers_needed / build_speed
+            
+            # Machine cost
+            machine_cost = build_time_hours * machine_cost_per_hour
+            
+            # Labor cost (setup + monitoring + post-processing)
+            labor_cost = (setup_time + build_time_hours * 0.1 + post_processing_time * quantity) * labor_cost_per_hour
+            
+            # Base cost
+            base_cost = material_cost + machine_cost + labor_cost
+            
+            # Apply margin
+            final_price = base_cost * (1 + margin_percent / 100)
+            
+            # Apply minimum price
+            final_price = max(final_price, minimum_price)
+            
+            # Check for C++ optimization availability
+            if preset.get('enable_cpp_optimization', False):
+                from stl_analyzer.stl_utils import HAS_CPP_EXTENSIONS
+                if HAS_CPP_EXTENSIONS:
+                    print("🚀 C++ optimization enabled for SLS pricing")
+                else:
+                    print("🐍 Using Python fallback for SLS pricing")
+            
+            return {
+                'material_cost': material_cost,
+                'machine_cost': machine_cost,
+                'labor_cost': labor_cost,
+                'base_cost': base_cost,
+                'final_price': final_price,
+                'pricing_method': 'SLS_Basic',
+                'material_weight_grams': material_weight,
+                'build_time_hours': build_time_hours
+            }
+            
+        except Exception as e:
+            print(f"❌ SLS pricing calculation failed: {e}")
+            # Fallback to simple calculation
+            volume = features.get('volume', 0)
+            fallback_price = max(minimum_price, volume * 0.00005)  # €0.05 per 1000 mm³
+            return {
+                'material_cost': 0,
+                'machine_cost': 0, 
+                'labor_cost': 0,
+                'base_cost': fallback_price,
+                'final_price': fallback_price,
+                'pricing_method': 'SLS_Fallback',
+                'error': str(e)
+            }
+    
+    def get_sls_presets(self):
+        """Get list of available SLS presets"""
+        sls_presets = {}
+        for name, preset in self.pricing_presets.items():
+            if preset.get('printer_type') == 'SLS':
+                sls_presets[name] = preset
+        return sls_presets
+    
+    def is_sls_mode_available(self):
+        """Check if SLS pricing mode is available"""
+        return len(self.get_sls_presets()) > 0
+    
+    def on_printer_type_changed(self, printer_type):
+        """Handle printer type change in price calculator"""
+        print(f"🔄 Printer type changed to: {printer_type}")
+        
+        try:
+            # Update available presets based on printer type  
+            preset_combo = None
+            cpp_label = None
+            
+            # Get references to UI elements
+            if hasattr(self, 'price_calculator_tab'):
+                preset_combo = getattr(self.price_calculator_tab, 'pricing_preset_combo', None)
+                cpp_label = getattr(self.price_calculator_tab, 'cpp_optimization_label', None)
+            
+            if preset_combo:
+                preset_combo.clear()
+                
+                if printer_type == "SLS":
+                    # Show SLS presets
+                    sls_presets = self.get_sls_presets()
+                    if sls_presets:
+                        preset_combo.addItems(list(sls_presets.keys()))
+                        print(f"✅ Loaded {len(sls_presets)} SLS presets")
+                    else:
+                        preset_combo.addItems(["No SLS presets available"])
+                        print("⚠️ No SLS presets found")
+                    
+                    # Show C++ optimization status for SLS
+                    if cpp_label:
+                        from stl_analyzer.stl_utils import HAS_CPP_EXTENSIONS
+                        if HAS_CPP_EXTENSIONS:
+                            cpp_label.setText("✅ Available")
+                            cpp_label.setStyleSheet("color: green;")
+                        else:
+                            cpp_label.setText("❌ Not available")
+                            cpp_label.setStyleSheet("color: red;")
+                        cpp_label.setVisible(True)
+                
+                elif printer_type == "MJF":
+                    # MJF presets (future implementation)
+                    preset_combo.addItems(["MJF Standard", "MJF Fast", "MJF Quality"])
+                    if cpp_label:
+                        cpp_label.setVisible(False)
+                    
+                else:  # General AI
+                    # Default presets
+                    preset_combo.addItems(["Default", "Premium", "Economy"])
+                    if cpp_label:
+                        cpp_label.setVisible(False)
+                        
+            # Update pricing calculation if a part is selected
+            if hasattr(self, 'price_calculator_tab') and hasattr(self.price_calculator_tab, 'parts_list'):
+                parts_list = self.price_calculator_tab.parts_list
+                if parts_list.currentItem():
+                    self.recalculate_price()
+                
+        except Exception as e:
+            print(f"❌ Error handling printer type change: {e}")
         
     def update_price_calculator_ui(self):
         """Update the price calculator UI state"""
@@ -1166,19 +1379,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.part_details_group.setEnabled(current_item is not None)
         self.recalculate_button.setEnabled(current_item is not None)
         
-        # If no parts, clear details
+        # If no parts, clear details in price calculator tab
         if not current_item:
-            self.material_cost_label.setText("€0.00")
-            self.estimated_time_label.setText("0.0 h")
-            self.complexity_factor_label.setText("1.00×")
-            self.machine_cost_label.setText("€0.00")
-            self.energy_cost_label.setText("€0.00")
-            self.labor_cost_label.setText("€0.00")
-            self.maintenance_cost_label.setText("€0.00")
-            self.ai_model_price_label.setText("€0.00")
-            self.base_total_label.setText("€0.00")
-            self.final_price_label.setText("€0.00")
-            self.save_to_project_button.setEnabled(False)
+            if hasattr(self, 'price_calculator_tab'):
+                # Update UI elements in price calculator tab
+                self.price_calculator_tab.material_cost_label.setText("€0.00")
+                self.price_calculator_tab.estimated_time_label.setText("0.0 h")
+                self.price_calculator_tab.machine_cost_label.setText("€0.00")
+                self.price_calculator_tab.labor_cost_label.setText("€0.00")
+                self.price_calculator_tab.base_total_label.setText("€0.00")
+                self.price_calculator_tab.final_price_label.setText("€0.00")
+                self.price_calculator_tab.save_to_project_button.setEnabled(False)
             
     def save_part_to_project(self):
         """Save the current part to the project"""
@@ -1186,11 +1397,249 @@ class MainWindow(QtWidgets.QMainWindow):
         
     def show_pricing_presets_dialog(self):
         """Show pricing presets dialog"""
-        self.show_status_message("Pricing presets dialog not implemented")
+        try:
+            from .dialogs.pricing_presets_dialog import PricingPresetsDialog
+            
+            dialog = PricingPresetsDialog(self.pricing_presets, self)
+            if dialog.exec_() == QtWidgets.QDialog.Accepted:
+                # Save presets to file
+                if self.save_pricing_presets():
+                    # Update the current printer type dropdown if SLS mode
+                    if hasattr(self, 'printer_type_combo'):
+                        current_type = self.printer_type_combo.currentText()
+                        self.on_printer_type_changed(current_type)
+                        
+                    self.show_status_message("✅ Pricing presets saved successfully!")
+                else:
+                    self.show_status_message("⚠️ Failed to save pricing presets")
+            else:
+                self.show_status_message("Pricing presets editing cancelled")
+                
+        except ImportError as e:
+            print(f"❌ Could not import pricing presets dialog: {e}")
+            self.show_status_message("Pricing presets dialog not available")
+        except Exception as e:
+            print(f"❌ Error opening pricing presets dialog: {e}")
+            self.show_status_message(f"Error: {str(e)}")
         
     def load_price_project(self):
         """Load a price project"""
-        self.show_status_message("Load project functionality not implemented")
+        try:
+            file_dialog = QtWidgets.QFileDialog()
+            file_path, _ = file_dialog.getOpenFileName(
+                self, "Load Price Calculator Project", "", 
+                "Price Projects (*.json);;All Files (*)"
+            )
+            
+            if file_path:
+                import json
+                
+                with open(file_path, 'r') as f:
+                    project_data = json.load(f)
+                
+                # Load parts data
+                self.price_calc_parts = project_data.get('parts', {})
+                
+                # Load settings
+                settings = project_data.get('settings', {})
+                if hasattr(self, 'printer_type_combo'):
+                    printer_type = settings.get('printer_type', 'General AI')
+                    index = self.printer_type_combo.findText(printer_type)
+                    if index >= 0:
+                        self.printer_type_combo.setCurrentIndex(index)
+                        self.on_printer_type_changed(printer_type)
+                
+                if hasattr(self, 'pricing_preset_combo'):
+                    preset = settings.get('preset', 'Default')
+                    index = self.pricing_preset_combo.findText(preset)
+                    if index >= 0:
+                        self.pricing_preset_combo.setCurrentIndex(index)
+                
+                if hasattr(self, 'use_ai_model_checkbox'):
+                    self.use_ai_model_checkbox.setChecked(settings.get('use_ai_model', True))
+                
+                # Update UI
+                self.update_price_calculator_parts_list()
+                self.show_status_message(f"✅ Loaded price project: {os.path.basename(file_path)}")
+                
+        except Exception as e:
+            print(f"❌ Error loading price project: {e}")
+            self.show_status_message(f"Error loading project: {str(e)}")
+    
+    def save_price_to_project(self):
+        """Save the current price project"""
+        if not self.price_calc_parts:
+            self.show_status_message("No parts to save")
+            return
+            
+        try:
+            file_dialog = QtWidgets.QFileDialog()
+            file_path, _ = file_dialog.getSaveFileName(
+                self, "Save Price Calculator Project", "", 
+                "Price Projects (*.json);;All Files (*)"
+            )
+            
+            if file_path:
+                import json
+                
+                # Prepare project data
+                project_data = {
+                    'parts': self.price_calc_parts,
+                    'settings': {
+                        'printer_type': self.get_current_printer_type(),
+                        'preset': self.get_current_preset(),
+                        'use_ai_model': self.get_current_ai_model_setting()
+                    },
+                    'created': str(datetime.datetime.now()),
+                    'version': '1.0'
+                }
+                
+                with open(file_path, 'w') as f:
+                    json.dump(project_data, f, indent=2)
+                    
+                self.show_status_message(f"✅ Saved price calculator project: {os.path.basename(file_path)}")
+                
+        except Exception as e:
+            print(f"❌ Error saving price project: {e}")
+            self.show_status_message(f"Error saving project: {str(e)}")
+    
+    def add_price_calc_part(self):
+        """Add STL part to price calculator"""
+        try:
+            file_dialog = QtWidgets.QFileDialog()
+            file_paths, _ = file_dialog.getOpenFileNames(
+                self, "Add STL Parts to Price Calculator", "", 
+                "STL Files (*.stl);;All Files (*)"
+            )
+            
+            if not file_paths:
+                return
+            
+            for file_path in file_paths:
+                if file_path not in self.price_calc_parts:
+                    # Extract features for this part
+                    print(f"🔄 Processing {os.path.basename(file_path)} for price calculator...")
+                    
+                    try:
+                        from stl_analyzer.stl_utils import extract_features_with_shrinkwrap
+                        import trimesh
+                        
+                        # Load mesh for Pack3D
+                        mesh = trimesh.load(file_path)
+                        features = extract_features_with_shrinkwrap(file_path)
+                        
+                        if features and mesh is not None:
+                            self.price_calc_parts[file_path] = {
+                                'features': features,
+                                'mesh': mesh,  # Add mesh for Pack3D
+                                'quantity': 1,
+                                'calculated_price': 0.0,
+                                'pricing_method': 'Pending'
+                            }
+                            print(f"✅ Added {os.path.basename(file_path)} to price calculator")
+                        else:
+                            print(f"⚠️ Failed to extract features or load mesh from {os.path.basename(file_path)}")
+                            
+                    except Exception as e:
+                        print(f"❌ Error processing {os.path.basename(file_path)}: {e}")
+            
+            # Update UI
+            self.update_price_calculator_parts_list()
+            self.show_status_message(f"Added {len(file_paths)} parts to price calculator")
+            
+        except Exception as e:
+            print(f"❌ Error adding parts to price calculator: {e}")
+            self.show_status_message(f"Error adding parts: {str(e)}")
+    
+    def remove_price_calc_part(self):
+        """Remove selected part from price calculator"""
+        try:
+            if hasattr(self, 'parts_list') and self.parts_list.currentItem():
+                current_item = self.parts_list.currentItem()
+                file_path = current_item.data(QtCore.Qt.UserRole)
+                
+                if file_path in self.price_calc_parts:
+                    part_name = os.path.basename(file_path)
+                    del self.price_calc_parts[file_path]
+                    
+                    # Update UI
+                    self.update_price_calculator_parts_list()
+                    self.show_status_message(f"Removed {part_name} from price calculator")
+                    print(f"🗑️ Removed {part_name} from price calculator")
+                else:
+                    self.show_status_message("Part not found in calculator")
+            else:
+                self.show_status_message("No part selected to remove")
+                
+        except Exception as e:
+            print(f"❌ Error removing part: {e}")
+            self.show_status_message(f"Error removing part: {str(e)}")
+    
+    def update_price_calculator_parts_list(self):
+        """Update the parts list in the price calculator UI"""
+        if hasattr(self, 'parts_list'):
+            self.parts_list.clear()
+            
+            for file_path, part_data in self.price_calc_parts.items():
+                item = QtWidgets.QListWidgetItem(os.path.basename(file_path))
+                item.setData(QtCore.Qt.UserRole, file_path)
+                
+                # Add pricing info if available
+                price = part_data.get('calculated_price', 0)
+                method = part_data.get('pricing_method', 'Pending')
+                if price > 0:
+                    item.setText(f"{os.path.basename(file_path)} - €{price:.2f} ({method})")
+                
+                self.parts_list.addItem(item)
+            
+            # Update button states in the Price Calculator tab
+            if hasattr(self, 'price_calculator_tab') and hasattr(self.price_calculator_tab, 'update_button_states'):
+                self.price_calculator_tab.update_button_states()
+            
+            # Update UI state
+            self.update_price_calculator_ui()
+    
+    def get_current_printer_type(self):
+        """Get current printer type from UI or default"""
+        try:
+            # Try to get from price calculator tab
+            if hasattr(self, 'price_calculator_tab') and hasattr(self.price_calculator_tab, 'printer_type_combo'):
+                return self.price_calculator_tab.printer_type_combo.currentText()
+            # Fallback for other tabs
+            elif hasattr(self, 'printer_type_combo'):
+                return self.printer_type_combo.currentText()
+            else:
+                return 'General AI'
+        except:
+            return 'General AI'
+    
+    def get_current_preset(self):
+        """Get current preset from UI or default"""
+        try:
+            # Try to get from price calculator tab
+            if hasattr(self, 'price_calculator_tab') and hasattr(self.price_calculator_tab, 'pricing_preset_combo'):
+                return self.price_calculator_tab.pricing_preset_combo.currentText()
+            # Fallback for other tabs
+            elif hasattr(self, 'pricing_preset_combo'):
+                return self.pricing_preset_combo.currentText()
+            else:
+                return 'Default'
+        except:
+            return 'Default'
+    
+    def get_current_ai_model_setting(self):
+        """Get current AI model setting from UI or default"""
+        try:
+            # Try to get from price calculator tab
+            if hasattr(self, 'price_calculator_tab') and hasattr(self.price_calculator_tab, 'use_ai_model_checkbox'):
+                return self.price_calculator_tab.use_ai_model_checkbox.isChecked()
+            # Fallback for other tabs
+            elif hasattr(self, 'use_ai_model_checkbox'):
+                return self.use_ai_model_checkbox.isChecked()
+            else:
+                return True
+        except:
+            return True
         
     def recalculate_all_parts(self):
         """Recalculate all parts"""
@@ -2569,6 +3018,454 @@ class MainWindow(QtWidgets.QMainWindow):
         
         # Show completion message
         self.show_status_message(f"Scan completed! Added {count} STL files to database.")
+
+    # Pack3D Methods
+    def run_pack3d_optimization(self):
+        """Run Pack3D optimization on all parts in price calculator"""
+        try:
+            from ..pack3d_wrapper import Pack3DManager, is_pack3d_available
+            
+            if not is_pack3d_available():
+                QtWidgets.QMessageBox.critical(
+                    self, "Pack3D Error", 
+                    "Pack3D C++ extension not available. Please rebuild the extensions."
+                )
+                return
+            
+            # Check if we have parts to optimize
+            if not hasattr(self, 'price_calc_parts') or not self.price_calc_parts:
+                QtWidgets.QMessageBox.warning(
+                    self, "No Parts", 
+                    "Please add parts to the price calculator before running Pack3D optimization."
+                )
+                return
+            
+            # Update status
+            if hasattr(self, 'price_calculator_tab'):
+                self.price_calculator_tab.pack3d_status_label.setText("Initializing...")
+                self.price_calculator_tab.pack3d_status_label.setStyleSheet("color: orange; font-weight: bold;")
+                self.price_calculator_tab.run_pack3d_button.setEnabled(False)
+            
+            # Get printer type
+            printer_type = "EOS_P396"  # Default
+            if hasattr(self, 'price_calculator_tab') and self.price_calculator_tab.pack3d_printer_combo.currentIndex() == 1:
+                printer_type = "EOS_P110"
+            
+            # Initialize Pack3D manager
+            pack3d_manager = Pack3DManager(printer_type)
+            
+            # Get Pack3D parameters from UI
+            if hasattr(self, 'price_calculator_tab'):
+                params = self.price_calculator_tab.get_pack3d_parameters()
+                pack3d_manager.set_optimization_parameters(
+                    initial_temp=params['initial_temperature'],
+                    cooling_rate=params['cooling_rate'],
+                    min_temp=params['min_temperature'],  # Use UI min temperature
+                    max_iterations=params['max_iterations']
+                )
+                print(f"🔧 Using Pack3D parameters: {params['max_iterations']} iterations, temp {params['initial_temperature']}°→{params['min_temperature']}°, cooling {params['cooling_rate']}")
+            
+                # Get part quantities from UI
+                quantities = self.price_calculator_tab.get_pack3d_quantities()
+                print(f"📊 Pack3D quantities: {quantities}")
+            
+            # Add all parts from price calculator (with quantities)
+            parts_added = 0
+            for file_path, part_data in self.price_calc_parts.items():
+                if 'mesh' in part_data and part_data['mesh'] is not None:
+                    part_name = os.path.basename(file_path)
+                    
+                    # Get quantity for this part (default to 1)
+                    quantity = quantities.get(part_name, 1) if quantities else 1
+                    
+                    # Add multiple copies based on quantity
+                    for copy_num in range(quantity):
+                        copy_name = f"{part_name}" if quantity == 1 else f"{part_name} (Copy {copy_num + 1})"
+                        pack3d_manager.add_part_from_mesh(part_data['mesh'], copy_name)
+                        parts_added += 1
+                        
+                    print(f"✅ Added {quantity}x {part_name} to Pack3D optimizer ({parts_added} total parts)")
+                else:
+                    print(f"⚠️ No mesh data for part: {os.path.basename(file_path)}")
+            
+            if parts_added == 0:
+                QtWidgets.QMessageBox.warning(
+                    self, "No Valid Parts", 
+                    "No parts with valid mesh data found. Please reload parts in the price calculator."
+                )
+                if hasattr(self, 'price_calculator_tab'):
+                    self.price_calculator_tab.pack3d_status_label.setText("No Parts")
+                    self.price_calculator_tab.pack3d_status_label.setStyleSheet("color: orange; font-weight: bold;")
+                    self.price_calculator_tab.run_pack3d_button.setEnabled(True)
+                return
+            
+            # Update status
+            if hasattr(self, 'price_calculator_tab'):
+                self.price_calculator_tab.pack3d_status_label.setText("Optimizing...")
+                self.price_calculator_tab.pack3d_status_label.setStyleSheet("color: red; font-weight: bold;")
+                
+                # Disable run button, enable stop button
+                self.price_calculator_tab.run_pack3d_button.setEnabled(False)
+                self.price_calculator_tab.stop_pack3d_button.setEnabled(True)
+            
+            # SIMPLE FIX: Just run blocking optimization - keep it simple and working
+            print("🚀 Starting Pack3D optimization...")
+            print("   This will take some time - the GUI will be unresponsive")
+            print("   Close the window to stop if needed")
+            
+            # Store manager for potential stop functionality
+            self.current_pack3d_manager = pack3d_manager
+            
+            # Run optimization (blocking)
+            success = pack3d_manager.optimize()
+            
+            # Get results
+            results = pack3d_manager.get_optimization_summary()
+            
+            # Update UI directly
+            self.update_pack3d_results(success, results)
+            
+            print("✅ Pack3D optimization completed!")
+            
+            # Store results for export
+            self.pack3d_results = pack3d_manager
+            
+            # Store the manager for stopping
+            self.current_pack3d_manager = pack3d_manager
+            
+            # Update 3D visualization ALWAYS (even if collision detection failed)
+            # The algorithm achieved good results - show them regardless of collision flag
+            if hasattr(self, 'price_calculator_tab') and hasattr(self.price_calculator_tab, 'price_calc_viewer'):
+                try:
+                    print("🎯 Updating 3D viewer with Pack3D results...")
+                    self.price_calculator_tab.price_calc_viewer.set_pack3d_results(pack3d_manager)
+                    
+                    # Auto-enable Pack3D visualization
+                    self.price_calculator_tab.price_calc_pack3d_checkbox.setChecked(True)
+                    self.price_calculator_tab.price_calc_viewer.set_pack3d_visible(True)
+                    
+                    print("✅ 3D visualization updated with Pack3D results")
+                except Exception as e:
+                    print(f"⚠️ Could not update 3D visualization: {e}")
+            
+            print(f"🎉 Pack3D optimization {'successful' if success else 'failed'}")
+            print(f"   Build height: {results.get('build_height_mm', 0.0):.1f}mm")
+            print(f"   Plate utilization: {results.get('plate_utilization_percent', 0.0):.1f}%")
+            
+            if success:
+                QtWidgets.QMessageBox.information(
+                    self, "Pack3D Success", 
+                    f"Pack3D optimization completed successfully!\n\n"
+                    f"Build Height: {results.get('build_height_mm', 0.0):.1f}mm\n"
+                    f"Plate Utilization: {results.get('plate_utilization_percent', 0.0):.1f}%\n"
+                    f"Iterations: {results.get('total_iterations', 0)}\n"
+                    f"Time: {results.get('optimization_time_ms', 0.0):.0f}ms"
+                )
+            else:
+                QtWidgets.QMessageBox.warning(
+                    self, "Pack3D Failed", 
+                    "Pack3D optimization failed to find a collision-free solution.\n"
+                    "Try adjusting parameters or reducing the number of parts."
+                )
+                
+        except Exception as e:
+            print(f"❌ Pack3D optimization error: {e}")
+            QtWidgets.QMessageBox.critical(
+                self, "Pack3D Error", 
+                f"Pack3D optimization failed:\n{str(e)}"
+            )
+            
+            # Reset status
+            if hasattr(self, 'price_calculator_tab'):
+                self.price_calculator_tab.pack3d_status_label.setText("Error")
+                self.price_calculator_tab.pack3d_status_label.setStyleSheet("color: red; font-weight: bold;")
+                self.price_calculator_tab.run_pack3d_button.setEnabled(True)
+                self.price_calculator_tab.stop_pack3d_button.setEnabled(False)
+    
+    def clear_pack3d_results(self):
+        """Clear Pack3D optimization results"""
+        try:
+            # Clear stored results
+            if hasattr(self, 'pack3d_results'):
+                self.pack3d_results = None
+            
+            # Reset UI
+            if hasattr(self, 'price_calculator_tab'):
+                self.price_calculator_tab.pack3d_status_label.setText("Ready")
+                self.price_calculator_tab.pack3d_status_label.setStyleSheet("color: blue; font-weight: bold;")
+                
+                self.price_calculator_tab.pack3d_build_height_label.setText("N/A")
+                self.price_calculator_tab.pack3d_utilization_label.setText("N/A")
+                self.price_calculator_tab.pack3d_iterations_label.setText("N/A")
+                self.price_calculator_tab.pack3d_time_label.setText("N/A")
+                
+                self.price_calculator_tab.clear_pack3d_button.setEnabled(False)
+                self.price_calculator_tab.export_pack3d_button.setEnabled(False)
+            
+            print("🗑️ Pack3D results cleared")
+            
+        except Exception as e:
+            print(f"❌ Error clearing Pack3D results: {e}")
+    
+    def stop_pack3d_optimization(self):
+        """Stop Pack3D optimization"""
+        try:
+            if hasattr(self, 'current_pack3d_manager') and self.current_pack3d_manager:
+                print("🛑 Stopping Pack3D optimization...")
+                self.current_pack3d_manager.stop_optimization()
+                
+                # Update UI
+                if hasattr(self, 'price_calculator_tab'):
+                    self.price_calculator_tab.pack3d_status_label.setText("Stopped")
+                    self.price_calculator_tab.pack3d_status_label.setStyleSheet("color: orange; font-weight: bold;")
+                    
+                    # Re-enable run button, disable stop button
+                    self.price_calculator_tab.run_pack3d_button.setEnabled(True)
+                    self.price_calculator_tab.stop_pack3d_button.setEnabled(False)
+                
+                print("✅ Pack3D optimization stopped")
+            else:
+                print("⚠️ No Pack3D optimization running to stop")
+                
+        except Exception as e:
+            print(f"❌ Error stopping Pack3D optimization: {e}")
+    
+    def handle_optimization_error(self, error_msg: str):
+        """Handle Pack3D optimization errors from QThread"""
+        try:
+            print(f"❌ Pack3D optimization error: {error_msg}")
+            
+            # Update UI
+            if hasattr(self, 'price_calculator_tab'):
+                self.price_calculator_tab.pack3d_status_label.setText("Error")
+                self.price_calculator_tab.pack3d_status_label.setStyleSheet("color: red; font-weight: bold;")
+                
+                # Re-enable run button, disable stop button
+                self.price_calculator_tab.run_pack3d_button.setEnabled(True)
+                self.price_calculator_tab.stop_pack3d_button.setEnabled(False)
+            
+            # Show error message
+            QtWidgets.QMessageBox.critical(
+                self, "Pack3D Error", 
+                f"Pack3D optimization failed:\n{error_msg}"
+            )
+            
+        except Exception as e:
+            print(f"❌ Error handling optimization error: {e}")
+    
+    def update_pack3d_results(self, success: bool, results):
+        """Update Pack3D results UI from main thread (called from background thread)"""
+        try:
+            print(f"🔄 Updating Pack3D results UI: success={success}")
+            
+            # Update UI with results
+            if hasattr(self, 'price_calculator_tab'):
+                if success and results:
+                    self.price_calculator_tab.pack3d_status_label.setText("Completed")
+                    self.price_calculator_tab.pack3d_status_label.setStyleSheet("color: green; font-weight: bold;")
+                    
+                    # Update result labels with safe access
+                    build_height = results.get('build_height_mm', 0.0)
+                    utilization = results.get('plate_utilization_percent', 0.0)
+                    iterations = results.get('total_iterations', 0)
+                    opt_time = results.get('optimization_time_ms', 0.0)
+                    
+                    self.price_calculator_tab.pack3d_build_height_label.setText(f"{build_height:.1f}mm")
+                    self.price_calculator_tab.pack3d_utilization_label.setText(f"{utilization:.1f}%")
+                    self.price_calculator_tab.pack3d_iterations_label.setText(f"{iterations}")
+                    self.price_calculator_tab.pack3d_time_label.setText(f"{opt_time:.0f}ms")
+                    
+                    # Enable export buttons
+                    self.price_calculator_tab.clear_pack3d_button.setEnabled(True)
+                    self.price_calculator_tab.export_pack3d_button.setEnabled(True)
+                    
+                    print(f"✅ Pack3D completed: {build_height:.1f}mm height, {utilization:.1f}% utilization")
+                else:
+                    self.price_calculator_tab.pack3d_status_label.setText("Failed")
+                    self.price_calculator_tab.pack3d_status_label.setStyleSheet("color: red; font-weight: bold;")
+                    print("❌ Pack3D optimization failed")
+                
+                # Re-enable run button, disable stop button
+                self.price_calculator_tab.run_pack3d_button.setEnabled(True)
+                self.price_calculator_tab.stop_pack3d_button.setEnabled(False)
+            
+            # Update 3D visualization if successful
+            if success and hasattr(self, 'price_calculator_tab') and hasattr(self.price_calculator_tab, 'price_calc_viewer'):
+                try:
+                    print("🎯 Updating 3D viewer with Pack3D results...")
+                    self.price_calculator_tab.price_calc_viewer.set_pack3d_results(self.current_pack3d_manager)
+                    
+                    # Auto-enable Pack3D visualization
+                    self.price_calculator_tab.price_calc_pack3d_checkbox.setChecked(True)
+                    self.price_calculator_tab.price_calc_viewer.set_pack3d_visible(True)
+                    
+                    print("✅ 3D visualization updated with Pack3D results")
+                except Exception as e:
+                    print(f"⚠️ Could not update 3D visualization: {e}")
+            
+        except Exception as e:
+            print(f"❌ Error updating Pack3D results UI: {e}")
+    
+    def export_pack3d_results(self):
+        """Export Pack3D results to JSON file"""
+        try:
+            if not hasattr(self, 'pack3d_results') or not self.pack3d_results:
+                QtWidgets.QMessageBox.warning(
+                    self, "No Results", 
+                    "No Pack3D results to export. Run optimization first."
+                )
+                return
+            
+            # Get export path
+            file_dialog = QtWidgets.QFileDialog()
+            file_path, _ = file_dialog.getSaveFileName(
+                self, "Export Pack3D Results", "pack3d_results.json", 
+                "JSON Files (*.json);;All Files (*)"
+            )
+            
+            if file_path:
+                success = self.pack3d_results.export_results_to_json(file_path)
+                if success:
+                    QtWidgets.QMessageBox.information(
+                        self, "Export Success", 
+                        f"Pack3D results exported successfully to:\n{file_path}"
+                    )
+                else:
+                    QtWidgets.QMessageBox.critical(
+                        self, "Export Failed", 
+                        "Failed to export Pack3D results. Check console for details."
+                    )
+                    
+        except Exception as e:
+            print(f"❌ Error exporting Pack3D results: {e}")
+            QtWidgets.QMessageBox.critical(
+                self, "Export Error", 
+                f"Failed to export Pack3D results:\n{str(e)}"
+            )
+    
+    def refresh_pack3d_quantities(self):
+        """Refresh Pack3D quantities table with current parts"""
+        try:
+            if not hasattr(self, 'price_calculator_tab') or not hasattr(self, 'price_calc_parts'):
+                return
+            
+            table = self.price_calculator_tab.pack3d_quantities_table
+            
+            # Clear existing rows
+            table.setRowCount(0)
+            
+            # Add row for each part
+            for i, (file_path, part_data) in enumerate(self.price_calc_parts.items()):
+                if 'mesh' in part_data and part_data['mesh'] is not None:
+                    part_name = os.path.basename(file_path)
+                    
+                    # Add row
+                    table.insertRow(i)
+                    
+                    # Part name (read-only)
+                    name_item = QtWidgets.QTableWidgetItem(part_name)
+                    name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)  # Make read-only
+                    table.setItem(i, 0, name_item)
+                    
+                    # Quantity spinner
+                    quantity_spin = QtWidgets.QSpinBox()
+                    quantity_spin.setRange(1, 100)
+                    quantity_spin.setValue(1)
+                    quantity_spin.setToolTip(f"Number of {part_name} copies to pack")
+                    table.setCellWidget(i, 1, quantity_spin)
+            
+            print(f"🔄 Refreshed Pack3D quantities table with {table.rowCount()} parts")
+            
+        except Exception as e:
+            print(f"❌ Error refreshing Pack3D quantities: {e}")
+    
+    def check_optimization_completion(self):
+        """Check if Pack3D optimization has completed"""
+        if hasattr(self, 'thread_completed') and self.thread_completed:
+            # Stop the timer
+            if hasattr(self, 'optimization_timer'):
+                self.optimization_timer.stop()
+            
+            # Get results and update UI
+            success, results = self.thread_results
+            self.thread_completed = False
+            self.thread_results = None
+            
+            # Update UI from main thread
+            self.update_pack3d_results(success, results)
+    
+    def export_pack3d_results(self):
+        """Export Pack3D results to JSON file"""
+        try:
+            if not hasattr(self, 'pack3d_results') or not self.pack3d_results:
+                QtWidgets.QMessageBox.warning(
+                    self, "No Results", 
+                    "No Pack3D results to export. Run optimization first."
+                )
+                return
+            
+            # Get export path
+            file_dialog = QtWidgets.QFileDialog()
+            file_path, _ = file_dialog.getSaveFileName(
+                self, "Export Pack3D Results", "pack3d_results.json", 
+                "JSON Files (*.json);;All Files (*)"
+            )
+            
+            if file_path:
+                success = self.pack3d_results.export_results_to_json(file_path)
+                if success:
+                    QtWidgets.QMessageBox.information(
+                        self, "Export Success", 
+                        f"Pack3D results exported successfully to:\n{file_path}"
+                    )
+                else:
+                    QtWidgets.QMessageBox.critical(
+                        self, "Export Failed", 
+                        "Failed to export Pack3D results. Check console for details."
+                    )
+                    
+        except Exception as e:
+            print(f"❌ Error exporting Pack3D results: {e}")
+            QtWidgets.QMessageBox.critical(
+                self, "Export Error", 
+                f"Failed to export Pack3D results:\n{str(e)}"
+            )
+    
+    def refresh_pack3d_quantities(self):
+        """Refresh Pack3D quantities table with current parts"""
+        try:
+            if not hasattr(self, 'price_calculator_tab') or not hasattr(self, 'price_calc_parts'):
+                return
+            
+            table = self.price_calculator_tab.pack3d_quantities_table
+            
+            # Clear existing rows
+            table.setRowCount(0)
+            
+            # Add row for each part
+            for i, (file_path, part_data) in enumerate(self.price_calc_parts.items()):
+                if 'mesh' in part_data and part_data['mesh'] is not None:
+                    part_name = os.path.basename(file_path)
+                    
+                    # Add row
+                    table.insertRow(i)
+                    
+                    # Part name (read-only)
+                    name_item = QtWidgets.QTableWidgetItem(part_name)
+                    name_item.setFlags(name_item.flags() & ~Qt.ItemIsEditable)  # Make read-only
+                    table.setItem(i, 0, name_item)
+                    
+                    # Quantity spinner
+                    quantity_spin = QtWidgets.QSpinBox()
+                    quantity_spin.setRange(1, 100)
+                    quantity_spin.setValue(1)
+                    quantity_spin.setToolTip(f"Number of {part_name} copies to pack")
+                    table.setCellWidget(i, 1, quantity_spin)
+            
+            print(f"🔄 Refreshed Pack3D quantities table with {table.rowCount()} parts")
+            
+        except Exception as e:
+            print(f"❌ Error refreshing Pack3D quantities: {e}")
 
 def run_app():
     """Run the STL Analyzer application"""

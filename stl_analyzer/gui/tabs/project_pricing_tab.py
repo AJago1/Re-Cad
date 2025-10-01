@@ -180,6 +180,12 @@ class ProjectPricingTab(QtWidgets.QWidget):
             self.project_toggle_sw_btn.clicked.connect(lambda checked: self.project_stl_viewer.set_shrinkwrap_visible(checked))
             controls_layout.addWidget(self.project_toggle_sw_btn)
             
+            self.project_toggle_bvh_btn = QtWidgets.QPushButton("8-Leaf BVH")
+            self.project_toggle_bvh_btn.setCheckable(True)
+            self.project_toggle_bvh_btn.clicked.connect(lambda checked: self.project_stl_viewer.set_bvh_8leaf_visible(checked))
+            self.project_toggle_bvh_btn.setToolTip("Show 8-leaf Bounding Volume Hierarchy for collision detection")
+            controls_layout.addWidget(self.project_toggle_bvh_btn)
+            
             controls_layout.addStretch()
             viewer_layout.addLayout(controls_layout)
         
